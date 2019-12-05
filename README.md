@@ -12,3 +12,4 @@ The following changes were made to the original dataset:
 •	Combined SPA 1 and SPA 2
 •	Data will not match the distribution of our actual summary stats, but the dataset is made up of reasonable numbers.
 
+This scrubbed, simulated dataset is PFASSerumData.csv. Scrambling affected everything except for serum levels in SPAs, which are still somewhat representative.
