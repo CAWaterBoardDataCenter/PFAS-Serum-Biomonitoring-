@@ -3,6 +3,7 @@ CDPH conducted biomonitoring for PFAS in selected regions in California. The rel
 
 Data from CDPH Biomonitoring CARE LA Study was scrubbed for confidential information. https://biomonitoring.ca.gov/results/projects/2876
 The following changes were made to the original dataset:
+
 •	Started with real LA County data for the 7 PFASs with a detection frequency above 65%
 •	Substituted MDL/sqrt2 for ND values in the real data.
 •	Synthesized fake PFAS data as:  (Fake PFAS = Real PFAS ± RandNum*SD), for which the multiplier was a randomly generated number between 0 and 1. Standard deviation was based on our real LA County data.
