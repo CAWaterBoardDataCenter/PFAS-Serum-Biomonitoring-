@@ -63,11 +63,38 @@ chem$PRIM_STA_C <- str_sub(chem$PRIM_STA_C, 1, 7)
 # join chem and stor data
 chem <- left_join(chem, stor, by = "STORE_NUM")
 chem <- left_join(chem, sdwis, by = c("PRIM_STA_C" = "Water System No"))
-
+chem <- chem %>% rename(chemical = CHEMICAL__)
 # write the joined data (optional, takes a while)
 #write_rds(chem, "chem.rds")
 ```
+### Unique chemicals
+```{r}
+#get unique names of chemicals for filtering
+unique(chem$chemical) %>% sort()
+```
+### Filter for PFAS
+```{r}
+#make list of PFAS and filter
+pfaslist <- c('PERFLUOROBUTANESULFONIC ACID (PFBS)',
+'PERFLUORODECANOIC ACID (PFDA)',
+'PERFLUORODODECANOIC ACID (PFDoA)',
+'PERFLUOROHEPTANOIC ACID (PFHpA)',
+'PERFLUOROHEXANE SULFONIC ACID (PFHxS)',
+'PERFLUOROHEXANOIC ACID (PFHxA)',
+'PERFLUORONONANOIC ACID (PFNA)',
+'PERFLUOROOCTANE SULFONIC ACID (PFOS)',
+'PERFLUOROOCTANOIC ACID (PFOA)',
+'PERFLUOROTETRADECANOIC ACID (PFTA)',
+'PERFLUOROTRIDECANOIC ACID (PFTrDA)',
+'PERFLUOROUNDECANOIC ACID (PFUnA)')
 
+#filter for PFAS data and delete the rest
+pfas <- chem %>% 
+  filter(chemical %in% pfaslist)
+rm(chem,sdwis, siteloc, stor, pfaslist, urls)
+```
+
+# Spatial Join to System Area Boundary Layer
 ```{r}
 PFAS_data <- read.dbf("PFAS_SPAspatialjoin.dbf", as.is = T)
 
