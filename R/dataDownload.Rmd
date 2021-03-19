@@ -6,6 +6,10 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+#INTRODUCTION
+
+This script pulls all California drinking water monitoring data for the previous 5 years from SDWIS, filters for PFAS data, and spatially joins drinking water well monitoring data with service area boundary layers.
+
 #Resources
 
 system boundaries homepage
@@ -21,16 +25,18 @@ library(foreign)
 library(readxl)
 library(vroom) #much faster than readr for csvs
 library(sf) #read shapefiles
+library(rgdal) #read OGR vector maps into spatial objects
 ```
 
 ## Data Import
-
+### Chemical Data
 ```{r}
 # download, upzip, and read most recent data and chemical storet info
 urls <- c("https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/chemical_as_csv.zip",
           "https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/storet_as_dbf.zip",
-          'https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/siteloc_as_dbf.zip')
-temp1 <- temp2 <- temp3 <- tempfile()
+          'https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/siteloc_as_dbf.zip',
+          'https://geotracker.waterboards.ca.gov/gama/data_download/gama_ddw_statewide.zip')
+temp1 <- temp2 <- temp3 <- temp4<- tempfile()
 
 download.file(urls[1], temp1)
 unzip(temp1, 
@@ -44,13 +50,18 @@ download.file(urls[3], temp3)
 unzip(temp3,
       exdir = "temp")
 
-rm(temp1, temp2, temp3) # remove temp files
+download.file(urls[4], temp3)
+unzip(temp4,
+      exdir = "temp")
+
+rm(temp1, temp2, temp3, temp4) # remove temp files
 
 # read chem and storet data into R
 # sometimes, R fails to unzip `chem`. unsure why, but manual download/unzip works
 chem  <- vroom("temp/chemical.csv")
 stor  <- read.dbf("temp/storet.dbf")
 siteloc <- read.dbf("temp/siteloc.dbf")
+#gama <- vroom("temp/gama_ddw_statewide.txt")
 
 # SDWIS data updates periodically, breaking the csv in url:
 # https://data.ca.gov/dataset/drinking-water-public-water-system-information
@@ -59,20 +70,25 @@ sdwis <- vroom("https://data.ca.gov/dataset/d6d3beac-6735-4127-9324-4e70f61698d9
 # make equivalent water system identifers 
 sdwis$`Water System No` <- str_sub(sdwis$`Water System No`, 3, 9)
 chem$PRIM_STA_C <- str_sub(chem$PRIM_STA_C, 1, 7)
+#gama$`WELL ID` <- str_sub(gama$`WELL ID`,1,7) #separate water system ID from wells
 
-# join chem and stor data
+
+# join chem,storet, and location data
 chem <- left_join(chem, stor, by = "STORE_NUM")
 chem <- left_join(chem, sdwis, by = c("PRIM_STA_C" = "Water System No"))
+#chem <- left_join(chem, gama, by = c("PRIM_STA_C" = "WELL ID"))
 chem <- chem %>% rename(chemical = CHEMICAL__)
 # write the joined data (optional, takes a while)
 #write_rds(chem, "chem.rds")
 ```
-### Unique chemicals
+
+#### Unique chemicals
 ```{r}
 #get unique names of chemicals for filtering
 unique(chem$chemical) %>% sort()
 ```
-### Filter for PFAS
+
+#### Filter for PFAS
 ```{r}
 #make list of PFAS and filter
 pfaslist <- c('PERFLUOROBUTANESULFONIC ACID (PFBS)',
@@ -93,8 +109,22 @@ pfas <- chem %>%
   filter(chemical %in% pfaslist)
 rm(chem,sdwis, siteloc, stor, pfaslist, urls)
 ```
+## Spatial Data
+```{r}
+SABL_link <- "https://opendata.arcgis.com/datasets/fbba842bf134497c9d611ad506ec48cc_0.zip"
+temp <- tempfile()
+temp2 <- tempfile()
+download.file(SABL_link, temp)
+unzip(zipfile = temp, exdir = temp2)
+#open with rgdal
+SABL <- readOGR(dsn = temp2, layer = "California_Drinking_Water_System_Area_Boundaries")
+#or open with sf
+SABL <- sf::st_read(paste0(temp2, "/California_Drinking_Water_System_Area_Boundaries.shp"))
+unlink(temp)
+unlink(temp2)
+```
 
-# Spatial Join to System Area Boundary Layer
+### Spatial Join to System Area Boundary Layer
 ```{r}
 PFAS_data <- read.dbf("PFAS_SPAspatialjoin.dbf", as.is = T)
 
@@ -148,22 +178,14 @@ sp
 EMILY: Just took a quick look and I believe the PFAS_SPAspatialjoin.dbf was created by spatially joining the well points with PFAS water quality data (lat/long) to the SPA (Los Angeles Service Planning Areas) polygons so that we could get average PFAS values for each SPA (the level at which the health data was at). This can be done within R, if that would be helpful (if your analysis is using health data in areas other than SPAs, like zip codes, the same spatial join could be done with a different .shp file). Example code below. I don't have the original PFAS water quality data or the original SPA shapefile on this laptop, but I can help write code to grab the water quality data ("wells", below) if needed! Or if you already have water quality data with lat/long, you can feed it though this.
 
 ```{r}
-# download system area boundary shapefile https://gis.data.ca.gov/datasets/fbba842bf134497c9d611ad506ec48cc?geometry=-148.883%2C31.064%2C-89.601%2C43.271 
-tempSABL <- tempfile()
-download.file("https://gispublic.waterboards.ca.gov/portalserver/rest/services/Drinking_Water/California_Drinking_Water_System_Area_Boundaries/FeatureServer/0/query?where=1%3D1&outFields=*&outSR=4326&f=json", tempSABL)
-unzip(tempSABL,exdir = "temp")
-
-rm(tempspa) # remove temp file
-
-# read system boundary layer shapefile into R
 #read shapefile with SPA polygons
 SABL <- st_read("California_Drinking_Water_System_Area_Boundaries.shp")
 #transform shapefile (if necessary)
 spa_wgs <- st_transform(spa, crs = 4326)
 #transform data frame with well points and water quality data into sf object
-wells_sf <- st_as_sf(wells, coords = c('LONGITUDE', 'LATITUDE'), crs = 4326)
+PFAS_sf <- st_as_sf(PFAS, coords = c('LONGITUDE', 'LATITUDE'), crs = 4326)
 #intersect well points with SPA polygons
-wells_int <- st_join(wells_sf, left = TRUE, spa_wgs["SPA_Name"])
+wells_int <- st_join(PFAS_sf, left = TRUE, spa_wgs["SPA_Name"])
 #the wells_int file should then replicate the data within "PFAS_SPAspatialjoin.dbf"
 ```
 

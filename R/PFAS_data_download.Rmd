@@ -1,0 +1,126 @@
+---
+title: "PFAS_DataDownload"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#INTRODUCTION
+
+This script pulls all California drinking water monitoring data for the previous 5 years from SDWIS, filters for PFAS data, and spatially joins drinking water well monitoring data with service area boundary layers.
+
+#Resources
+
+system boundaries homepage
+https://gis.data.ca.gov/datasets/waterboards::california-drinking-water-system-area-boundaries?geometry=-148.883%2C31.064%2C-89.601%2C43.271
+
+API for water system boundary layer
+https://opendata.arcgis.com/datasets/fbba842bf134497c9d611ad506ec48cc_0.geojson
+
+#Setup
+```{r}
+library(tidyverse)
+library(foreign)
+library(readxl)
+library(vroom) #much faster than readr for csvs
+library(sf) #read shapefiles
+library(rgdal) #read OGR vector maps into spatial objects
+```
+
+## Data Import
+### Chemical Data
+```{r}
+# download, upzip, and read most recent data and chemical storet info
+urls <- c("https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/chemical_as_csv.zip",
+          "https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/storet_as_dbf.zip",
+          'https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/siteloc_as_dbf.zip')
+temp1 <- temp2 <- temp3 <- tempfile()
+
+download.file(urls[1], temp1)
+unzip(temp1, 
+      exdir = "temp")
+
+download.file(urls[2], temp2)
+unzip(temp2,
+      exdir = "temp")
+
+download.file(urls[3], temp3)
+unzip(temp3,
+      exdir = "temp")
+
+rm(temp1, temp2, temp3) # remove temp files
+
+# read chem and storet data into R
+# sometimes, R fails to unzip `chem`. unsure why, but manual download/unzip works
+chem  <- vroom("temp/chemical.csv")
+stor  <- read.dbf("temp/storet.dbf")
+siteloc <- read.dbf("temp/siteloc.dbf")
+
+# SDWIS data updates periodically, breaking the csv in url:
+# https://data.ca.gov/dataset/drinking-water-public-water-system-information
+sdwis <- vroom("https://data.ca.gov/dataset/d6d3beac-6735-4127-9324-4e70f61698d9/resource/9dca2f92-4630-4bee-a9f9-69d2085b57e3/download/drinking-water-watch-public-water-system-facilities.txt")
+
+# make equivalent water system identifers 
+sdwis$`Water System No` <- str_sub(sdwis$`Water System No`, 3, 9)
+chem$PRIM_STA_C <- str_sub(chem$PRIM_STA_C, 1, 7)
+
+# join chem and stor data
+chem <- left_join(chem, stor, by = "STORE_NUM")
+chem <- left_join(chem, sdwis, by = c("PRIM_STA_C" = "Water System No"))
+chem <- chem %>% rename(chemical = CHEMICAL__)
+# write the joined data (optional, takes a while)
+#write_rds(chem, "chem.rds")
+```
+#### Unique chemicals
+```{r}
+#get unique names of chemicals for filtering
+unique(chem$chemical) %>% sort()
+```
+
+#### Filter for PFAS
+```{r}
+#make list of PFAS and filter
+pfaslist <- c('PERFLUOROBUTANESULFONIC ACID (PFBS)',
+'PERFLUORODECANOIC ACID (PFDA)',
+'PERFLUORODODECANOIC ACID (PFDoA)',
+'PERFLUOROHEPTANOIC ACID (PFHpA)',
+'PERFLUOROHEXANE SULFONIC ACID (PFHxS)',
+'PERFLUOROHEXANOIC ACID (PFHxA)',
+'PERFLUORONONANOIC ACID (PFNA)',
+'PERFLUOROOCTANE SULFONIC ACID (PFOS)',
+'PERFLUOROOCTANOIC ACID (PFOA)',
+'PERFLUOROTETRADECANOIC ACID (PFTA)',
+'PERFLUOROTRIDECANOIC ACID (PFTrDA)',
+'PERFLUOROUNDECANOIC ACID (PFUnA)')
+
+#filter for PFAS data and delete the rest
+pfas <- chem %>% 
+  filter(chemical %in% pfaslist)
+rm(chem,sdwis, siteloc, stor, pfaslist, urls)
+```
+## Spatial Data
+```{r}
+SABL_link <- "https://opendata.arcgis.com/datasets/fbba842bf134497c9d611ad506ec48cc_0.zip"
+temp <- tempfile()
+temp2 <- tempfile()
+download.file(SABL_link, temp)
+unzip(zipfile = temp, exdir = temp2)
+#open with rgdal
+SABL <- readOGR(dsn = temp2, layer = "California_Drinking_Water_System_Area_Boundaries")
+#or open with sf
+SABL <- sf::st_read(paste0(temp2, "/California_Drinking_Water_System_Area_Boundaries.shp"))
+unlink(temp)
+unlink(temp2)
+```
+### Spatial Join
+
+```{r}
+#transform shapefile (if necessary)
+SABL_wgs <- st_transform(SABL, crs = 4326)
+#transform data frame with well points and water quality data into sf object
+pfas_sf <- st_as_sf(pfas, coords = c('LONGITUDE', 'LATITUDE'), crs = 4326)
+#intersect well points with SPA polygons
+wells_int <- st_join(PFAS_sf, left = TRUE, spa_wgs["SPA_Name"])
+#the wells_int file should then replicate the data within "PFAS_SPAspatialjoin.dbf"
+```
