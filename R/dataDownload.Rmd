@@ -23,7 +23,7 @@ https://opendata.arcgis.com/datasets/fbba842bf134497c9d611ad506ec48cc_0.geojson
 library(tidyverse)
 library(foreign)
 library(readxl)
-library(vroom) #much faster than readr for csvs
+library(vroom) #much faster than readr for CSVs
 library(sf) #read shapefiles
 library(rgdal) #read OGR vector maps into spatial objects
 ```
@@ -31,7 +31,7 @@ library(rgdal) #read OGR vector maps into spatial objects
 ## Data Import
 ### Chemical Data
 ```{r}
-# download, upzip, and read most recent data and chemical storet info
+##### download, upzip, and read most recent data and chemical storet info ####
 urls <- c("https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/chemical_as_csv.zip",
           "https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/storet_as_dbf.zip",
           'https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/siteloc_as_dbf.zip',
@@ -56,12 +56,12 @@ unzip(temp4,
 
 rm(temp1, temp2, temp3, temp4) # remove temp files
 
-# read chem and storet data into R
+#### read chem and storet data into R ####
 # sometimes, R fails to unzip `chem`. unsure why, but manual download/unzip works
 chem  <- vroom("temp/chemical.csv")
 stor  <- read.dbf("temp/storet.dbf")
 siteloc <- read.dbf("temp/siteloc.dbf")
-#gama <- vroom("temp/gama_ddw_statewide.txt")
+gama <- vroom("temp/gama_ddw_statewide.txt") # GAMA data, includes drinking water under source == "DHS"
 
 # SDWIS data updates periodically, breaking the csv in url:
 # https://data.ca.gov/dataset/drinking-water-public-water-system-information
@@ -73,10 +73,10 @@ chem$PRIM_STA_C <- str_sub(chem$PRIM_STA_C, 1, 7)
 #gama$`WELL ID` <- str_sub(gama$`WELL ID`,1,7) #separate water system ID from wells
 
 
-# join chem,storet, and location data
+##### join chem,storet, and location data ####
 chem <- left_join(chem, stor, by = "STORE_NUM")
 chem <- left_join(chem, sdwis, by = c("PRIM_STA_C" = "Water System No"))
-#chem <- left_join(chem, gama, by = c("PRIM_STA_C" = "WELL ID"))
+chem <- left_join(chem, gama, by = c("PRIM_STA_C" = "WELL ID"))
 chem <- chem %>% rename(chemical = CHEMICAL__)
 # write the joined data (optional, takes a while)
 #write_rds(chem, "chem.rds")
