@@ -69,15 +69,16 @@ sdwis <- vroom("https://data.ca.gov/dataset/d6d3beac-6735-4127-9324-4e70f61698d9
 
 # make equivalent water system identifers 
 sdwis$`Water System No` <- str_sub(sdwis$`Water System No`, 3, 9)
-chem$PRIM_STA_C <- str_sub(chem$PRIM_STA_C, 1, 7)
+chem$PWSID <- str_sub(chem$PRIM_STA_C, 1, 7)
 #gama$`WELL ID` <- str_sub(gama$`WELL ID`,1,7) #separate water system ID from wells
 
 
 ##### join chem,storet, and location data ####
 chem <- left_join(chem, stor, by = "STORE_NUM")
-chem <- left_join(chem, sdwis, by = c("PRIM_STA_C" = "Water System No"))
+chem <- left_join(chem, sdwis, by = c("PWSID" = "Water System No"))
 chem <- left_join(chem, gama, by = c("PRIM_STA_C" = "WELL ID"))
 chem <- chem %>% rename(chemical = CHEMICAL__)
+chem <- left_join(chem,siteloc, by = c("PRIM_STA_C" = "PRI_STA_C"))
 # write the joined data (optional, takes a while)
 #write_rds(chem, "chem.rds")
 ```
