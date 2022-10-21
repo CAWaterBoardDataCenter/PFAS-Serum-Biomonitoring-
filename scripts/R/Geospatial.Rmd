@@ -1,0 +1,255 @@
+---
+title: "PFAS Geosptial analysis"
+author: "Scott Coffin"
+date: "`r Sys.Date()`"
+output:   
+  html_document:
+    code_folding: hide
+    theme: journal
+    toc: yes
+    toc_float: yes
+    toc_depth: 6
+    number_sections: true
+    includes:
+     # after_body: footer.html
+  word_document:
+    toc: yes
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+#Setup
+```{r include=FALSE}
+library(tidyverse)
+library(DT)
+library(RColorBrewer)
+library(collapsibleTree)
+library(janitor)
+library(ggpmisc)
+library(scales)
+library(tidygeocoder)
+library(mapview)      # interactive maps!
+library(ggspatial)
+library(basemaps)
+library(USAboundaries)
+library(sf)
+library(ggmap)
+library(ggpubr)
+library(ggsci)
+```
+
+# Read in Data
+# Drinking water chemical data
+```{r}
+pfas <- read.csv("data/pfas.csv")
+```
+ 
+## Spatial Data
+
+system boundaries homepage
+https://gis.data.ca.gov/datasets/waterboards::california-drinking-water-system-area-boundaries?geometry=-148.883%2C31.064%2C-89.601%2C43.271
+
+API for water system boundary layer
+https://opendata.arcgis.com/datasets/fbba842bf134497c9d611ad506ec48cc_0.geojson
+
+### System Area Boundary Layer
+
+```{r eval=FALSE, include=FALSE}
+### This API is no longer active, so need to pull manually ###
+SABL_link <- "https://opendata.arcgis.com/datasets/fbba842bf134497c9d611ad506ec48cc_0.zip"
+temp <- tempfile()
+temp2 <- tempfile()
+download.file(SABL_link, temp)
+unzip(zipfile = temp, exdir = temp2)
+#open with rgdal
+SABL <- readOGR(dsn = temp2, layer = "California_Drinking_Water_System_Area_Boundaries")
+#or open with sf
+SABL <- sf::st_read(paste0(temp2, "/California_Drinking_Water_System_Area_Boundaries.shp"))
+unlink(temp)
+unlink(temp2)
+```
+
+data should be pulled manually by emailing request to: ddw-dsu@waterboards.ca.gov
+
+DISCLAIMER:
+Please be advised that this copy of the System Area Boundary Layer data is a snapshot of the CA drinking water system area boundaries provided to the State Board by individual water systems. A water system may have provided accurate, up-to-date boundaries, or may have provided boundaries that are only approximate. This layer does not contain all Public Water System boundaries. The dataset is in the process of being reviewed and verified. In addition, new boundaries are being added. Please note that these definitions are NOT a legal definition and should NOT be used to settle boundary disputes. Because the Water Board is targeting different information, there is no conflict with other authoritative agencies' definitions.
+
+```{r}
+#open with rgdal
+SABL <- readOGR(dsn = "data/GIS", layer = "SABL_Public_220802") #destination with zip extract of system area boundary layer from DDW
+
+#or open with sf
+SABL_sf <- sf::st_read("data/GIS/SABL_Public_220802.shp")
+```
+### Drinking Water Well Spatial Locations
+
+NOTE: The following section is outdated, and is kept here just for reference purposes.
+
+<!-- # ```{r eval=FALSE, include=FALSE} -->
+<!-- # ### Exact and up-to-date location data is avilable internally -->
+<!-- # #http://reportmanager/Reports/report/DDW/DDW%20Reports/GIS/SDWIS_WSF_PSCode_Locational_Data -->
+<!-- # #static download file in folder -->
+<!-- # locationData <- read.csv("data/SDWIS_WSF_PSCode_Locational_Data.csv") %>% -->
+<!-- #   rename("pwsid" = "WS_ID", -->
+<!-- #          "latitude" = "LATITUDE_MEASURE", -->
+<!-- #          "longitude" = "LONGITUDE_MEASURE") %>% -->
+<!-- #   dplyr::select(c(pwsid, latitude, longitude)) %>% -->
+<!-- #   drop_na(latitude) -->
+<!-- # -->
+<!-- # ## PS Code = PRIM_STA_C = Primary Station Code ## -->
+<!-- # ## Concat "CA" with PRIM_STA_C in pfas data to join with geospatial data ## -->
+<!-- # pfas %<>% -->
+<!-- #   mutate(pwsid = paste0("CA", PRIM_STA_C)) -->
+<!-- # -->
+<!-- # #join public water system ID location data with PFAS monitoring data from wells -->
+<!-- # pfas_loc <- plyr::join(pfas, locationData, -->
+<!-- #                                    by = "pwsid", type = "left", match = "first") -->
+
+<!-- #transform data frame with well points and water quality data into sf object -->
+<!-- pfas_sf <- st_as_sf(pfas_loc %>% drop_na(c(latitude, longitude)), #remove missing lat/long data -->
+<!--                       coords = c('longitude', 'latitude'), crs = 4326) -->
+
+<!-- #intersect well points with SPA polygons -->
+<!-- wells_int <- st_join(pfas_sf, left = TRUE, SABL_wgs["SPA_Name"]) -->
+<!-- #the wells_int file should then replicate the data within "PFAS_SPAspatialjoin.dbf" -->
+<!-- # ``` -->
+
+
+### Spatial Join of SABL and Well Data
+```{r}
+#transform shapefile (if necessary)
+SABL_wgs <- st_transform(SABL_sf, crs = 4326) %>%  #WGS85 projection
+  rename("pwsid" = "SABL_PWSID") #rename to be consistent with pfas data
+
+#join drinking water well data to service area boundary layer based on public water system ID
+pfas_SABL <- left_join(pfas, SABL_wgs, by = "pwsid")
+```
+
+### Average well concentrations within an SPA
+
+NOTE: Many wells are below *laboratory detection limits* which vary by chemical and lab. Ordinarily we would know if it's below the detection limit for reporting (DLR), however PFAS lack DLR right now. Need to figure out data censoring method.
+```{r}
+SPA_avg <- pfas_SABL %>% 
+    group_by(pwsid, chemical) %>%
+  summarize(spa_chem_mean = mean(FINDING))
+
+head(SPA_avg)
+```
+```{r}
+sp <- ggplot(SPA_avg, aes(x = spa_chem_mean, y = spa_chem_mean)) +
+  geom_point() +
+  facet_wrap(~chemical)
+
+sp
+```
+
+
+[NOTE: THE FOLLOWING CODE IS EXAMPLE CODE COPIED FROM A DIFFERENT REPO. PLEASE USE WHAT'S NECESSARY/INSPIRING AND DELETE]
+
+#Spatial Analysis
+## Data preparation
+Plot locations based on water system location (not exact sampling location)
+
+```{r eval=FALSE, include=FALSE}
+#read in watsys location data from https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/EDTlibrary.html
+watsys <- read.csv("data/watsys.csv") %>% 
+  #rename("pwsid" = "ï..pwsid") %>% 
+  dplyr::select(c(pwsid, ADDRESS, STATE, ZIP, ZIP_EXT))
+
+#join with final list
+final.list.locations <- left_join(final.list, watsys, by = "pwsid")
+
+#geocode lat and long based on addresses of water systems (WARNING: This chunk takes a long time to run!)
+final.list.locations <- final.list.locations %>% 
+  #paste street address with city, state and zip code
+  mutate(newAddress = paste(ADDRESS, CITY, STATE, ZIP)) %>% 
+  tidygeocoder::geocode(newAddress, method = 'osm', lat = latitude, long = longitude) # open-source geocoding service https://nominatim.org/
+```
+
+ALTERNATIVE METHOD: water systems have already been geocoded internally.
+```{r}
+### Exact and up-to-date location data is avilable internally
+#http://reportmanager/Reports/report/DDW/DDW%20Reports/GIS/SDWIS_WSF_PSCode_Locational_Data
+#static download file in folder
+locationData <- read.csv("data/SDWIS_WSF_PSCode_Locational_Data.csv") %>% 
+  rename("pwsid" = "WS_ID",
+         "latitude" = "LATITUDE_MEASURE",
+         "longitude" = "LONGITUDE_MEASURE") %>% 
+  dplyr::select(c(pwsid, latitude, longitude)) %>% 
+  drop_na(latitude)
+  
+
+#join with final list
+#if we join as-is, there will be duplicate matches, so we need to simplify
+final.list.locations <- plyr::join(final.list, locationData,
+                                   by = "pwsid", type = "left", match = "first")
+  #left_join(final.list, locationData, by = "pwsid") %>% 
+  #dplyr::distinct("pwsid",
+   #               .keep_all = TRUE)
+```
+
+
+### Static maps
+#### Simple
+```{r}
+library(ggthemes)
+points <- final.list.locations %>% 
+  drop_na(c(longitude, latitude)) %>% 
+  st_as_sf(coords = c("longitude", "latitude"),
+           crs = 4326)
+
+#get basemap for CA
+states <- map_data("state")
+ca_df <- subset(states, region == "california")
+counties <- map_data("county")
+ca_county <- subset(counties, region == "california")
+
+ggplot() + 
+  #basemap
+  geom_polygon(data = ca_df, mapping = aes(x = long, y = lat, group = group),
+               color = "black", fill = "gray") +
+  coord_fixed(1.3) +
+# counties
+ # geom_polygon(fill = NA, color = "white", 
+  #             data = ca_county, mapping = aes(x = long, y = lat)) +
+  #geom_polygon(color = "black", fill = NA, alpha = 1,
+   #            data = ca_county, mapping = aes(x = long, y = lat)) +  # get the state border back on top
+  #add points
+  geom_point(data = final.list.locations,
+             aes(x = longitude, y = latitude),
+             color = "blue", size = 1.5) +
+  theme_minimal()
+
+```
+#### Annotated Maps
+##### Population
+```{r}
+population <- ggplot() + 
+  #basemap
+  geom_polygon(data = ca_df, mapping = aes(x = long, y = lat, group = group),
+               color = "black", fill = "gray50") +
+  coord_fixed(1.3) +
+  geom_point(data = final.list.locations,
+             aes(x = longitude, y = latitude, color = log10(Total.Population)),
+              size = 2,
+             alpha = 0.9) +
+  scale_color_gsea(name = "Log10(Population Served)") +
+  #scale_color_manual(values = cal_palette("sierra1", n = 50, type = "continuous")) +
+  ## Pretty annotations
+  annotation_scale(location = "bl") + #add scale
+  annotation_north_arrow(location = "bl", #north arrow
+                         pad_x =  unit(0.5, "in"), pad_y = unit(0.5, "in"), #shift it so it doesn't plot on top of scale bar
+                         style = north_arrow_fancy_orienteering()) + #change style of north arrow
+  #labs(legend = "Threshold") +
+  xlab("Longitude (NAD83)") +
+  ylab("Latitude (NAD83)") +
+  theme_minimal() +
+  theme(
+        legend.background = element_rect(fill = "white", color = "black"),
+        legend.position = c(0.81, 0.7),
+        legend.key.size = unit(0.3, 'cm')#,
+        #legend.title = element_blank()
+        )
+
+population
+```
