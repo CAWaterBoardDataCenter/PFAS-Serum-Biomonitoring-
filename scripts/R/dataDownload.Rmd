@@ -102,5 +102,5 @@ pfas <- chem %>%
 rm(chem,sdwis, siteloc, stor, pfaslist, urls)
 
 ## Write PFAS data to csv ##
-write.csv(pfas, "data/pfas.csv")
+write.csv(pfas, "output/pfas.csv")
 ```

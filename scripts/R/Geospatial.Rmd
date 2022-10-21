@@ -41,7 +41,7 @@ library(ggsci)
 # Read in Data
 # Drinking water chemical data
 ```{r}
-pfas <- read.csv("data/pfas.csv")
+pfas <- read.csv("output/pfas.csv")
 ```
  
 ## Spatial Data
