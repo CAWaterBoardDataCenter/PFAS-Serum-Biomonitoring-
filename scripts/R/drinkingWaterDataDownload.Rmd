@@ -1,0 +1,214 @@
+---
+title: "Drinking Water Download"
+author: "Scott Coffin"
+date: "`r Sys.Date()`"
+output:   
+  html_document:
+    code_folding: hide
+    theme: journal
+    toc: yes
+    toc_float: yes
+    toc_depth: 6
+    number_sections: true
+    includes:
+     # after_body: footer.html
+  word_document:
+    toc: yes
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+#Setup
+## Library
+```{r include=FALSE}
+library(tidyverse)
+library(RColorBrewer)
+library(collapsibleTree)
+library(foreign)
+library(readxl)
+library(vroom) #much faster than readr for csvs
+library(sf) #read shapefiles
+library(rgdal) #read OGR vector maps into spatial objects
+library(magrittr)
+```
+
+This script pulls all California drinking water monitoring data for the previous 5 years from SDWIS, filters for PFAS data, and spatially joins drinking water well monitoring data with service area boundary layers.
+
+##Resources
+
+*Public Datasets*
+system boundaries homepage
+https://gis.data.ca.gov/datasets/waterboards::california-drinking-water-system-area-boundaries?geometry=-148.883%2C31.064%2C-89.601%2C43.271
+
+API for water system boundary layer
+https://opendata.arcgis.com/datasets/fbba842bf134497c9d611ad506ec48cc_0.geojson
+
+https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary
+
+*Private Datasets*
+[NOTE: THESE DATASETS HAVE ALREADY BEEN DOWNLOADED INTO THIS REPO. THIS INFO IS FOR DOCUMENTATION PURPOSES ONLY]
+Treatment data for water systems were obtained from mDWW SDWIS database.
+To obtain this data, go to http://wb-sb-sdweb1:8080/CADWW/JSP/index.jsp and select "active treatment plants" from the report type, then download the excel spreadshee. Open in excel, then unmerge the cells and search and delete.
+
+Lat/Long data for water systems has already been geocoded and is available internally:
+http://reportmanager/Reports/report/DDW/DDW%20Reports/GIS/SDWIS_WSF_PSCode_Locational_Data
+
+# Data Import
+## Chemical Data
+```{r}
+# download, upzip, and read most recent data and chemical storet info
+urls <- c("https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/chemical_as_csv.zip",
+          "https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/storet_as_dbf.zip",
+          'https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/siteloc_as_dbf.zip')
+temp1 <- temp2 <- temp3 <- tempfile()
+
+download.file(urls[1], temp1)
+unzip(temp1, 
+      exdir = "temp")
+
+download.file(urls[2], temp2)
+unzip(temp2,
+      exdir = "temp")
+
+download.file(urls[3], temp3)
+unzip(temp3,
+      exdir = "temp")
+
+rm(temp1, temp2, temp3) # remove temp files
+
+# read chem and storet data into R
+# sometimes, R fails to unzip `chem`. unsure why, but manual download/unzip works
+chem  <- vroom("temp/chemical.csv")
+stor  <- read.dbf("temp/storet.dbf")
+siteloc <- read.dbf("temp/siteloc.dbf")
+
+# SDWIS data updates periodically, breaking the csv in url:
+# https://data.ca.gov/dataset/drinking-water-public-water-system-information
+sdwis <- vroom("https://data.ca.gov/dataset/d6d3beac-6735-4127-9324-4e70f61698d9/resource/9dca2f92-4630-4bee-a9f9-69d2085b57e3/download/drinking-water-watch-public-water-system-facilities.txt")
+
+# make equivalent water system identifers 
+sdwis$`Water System No` <- str_sub(sdwis$`Water System No`, 3, 9)
+chem$PRIM_STA_C <- str_sub(chem$PRIM_STA_C, 1, 7)
+
+# join chem and stor data
+chem <- left_join(chem, stor, by = "STORE_NUM")
+chem <- left_join(chem, sdwis, by = c("PRIM_STA_C" = "Water System No"))
+chem <- chem %>% rename(chemical = CHEMICAL__)
+# write the joined data (optional, takes a while)
+#write_rds(chem, "chem.rds")
+```
+
+### Disply names of unique chemicals
+```{r}
+#get unique names of chemicals for filtering
+unique(chem$chemical) %>% sort()
+```
+
+### Filter for PFAS
+```{r}
+#make list of PFAS and filter
+pfaslist <- c('PERFLUOROBUTANESULFONIC ACID (PFBS)',
+'PERFLUORODECANOIC ACID (PFDA)',
+'PERFLUORODODECANOIC ACID (PFDoA)',
+'PERFLUOROHEPTANOIC ACID (PFHpA)',
+'PERFLUOROHEXANE SULFONIC ACID (PFHxS)',
+'PERFLUOROHEXANOIC ACID (PFHxA)',
+'PERFLUORONONANOIC ACID (PFNA)',
+'PERFLUOROOCTANE SULFONIC ACID (PFOS)',
+'PERFLUOROOCTANOIC ACID (PFOA)',
+'PERFLUOROTETRADECANOIC ACID (PFTA)',
+'PERFLUOROTRIDECANOIC ACID (PFTrDA)',
+'PERFLUOROUNDECANOIC ACID (PFUnA)')
+
+#filter for PFAS data and delete the rest
+pfas <- chem %>% 
+  filter(chemical %in% pfaslist)
+rm(chem,sdwis, siteloc, stor, pfaslist, urls)
+
+## Write PFAS data to csv ##
+write.csv(pfas, "output/pfas.csv")
+```
+
+#Treatment data
+Treatment data for water systems were obtained from mDWW SDWIS database.
+To obtain this data, go to http://wb-sb-sdweb1:8080/CADWW/JSP/index.jsp and select "active treatment plants" from the report type, then download the excel spreadshee. Open in excel, then unmerge the cells and search and delete.
+```{r}
+#import data
+treatment <- read.csv("data/treatment_tech_info.csv",
+                      stringsAsFactors = TRUE,
+                      na.strings = c("NULL", "NA"))
+##Note that this is a *nested* dataset, as many treatment plants employ numerous unit processes##
+
+#nest data
+nested_treatment <- treatment %>% 
+   select(c(Principal.County.Served, pwsid, Water.System.Name, State.Water.System.Type,
+             Primary.Water.Source.Type, Total.Number.of.Service.Connections, Total.Population,
+             CITY, facility_names, System.Status, Fee.Code, 
+            #variables to nest
+            unit_process, treatment_objective, treatment_process)) %>% 
+  group_by(Principal.County.Served, pwsid, Water.System.Name, State.Water.System.Type,
+             Primary.Water.Source.Type, Total.Number.of.Service.Connections, Total.Population,
+             CITY, System.Status, Fee.Code
+           ) %>% 
+  nest(.key = "treatment")
+```
+
+
+## Classification
+Based on what is known regarding PFAS removal capabilities in the literature, the following treatment processes are regarded as having a high  likelihood of significantly removing PFAS:
+
+REVERSE OSMOSIS ,
+REVERSE OSMOSIS,POINT OF ENTRY ,
+REVERSE OSMOSIS,POINT OF USE ,
+ACTIVATED CARBON, GRANULAR ,
+ION EXCHANGE 
+
+To assess the approximate proportion of systems in the state that have some capability of removing PFAS, systems with these treatments were summarized.
+
+References for treatment data: *NEEDED*
+
+Removal percentages are coded as follows:
+* High = >90%
+* Medium = 30 to 90%
+* Low = 0 to 30%
+
+```{r}
+likely.treatment <- treatment %>% 
+  mutate(categorical_removal = case_when(
+                                        treatment_process== "REVERSE OSMOSIS" ~ "high",
+                                        treatment_process== "REVERSE OSMOSIS,POINT OF ENTRY" ~ "high",
+                                        treatment_process== "REVERSE OSMOSIS,POINT OF USE" ~ "high",
+                                        treatment_process== "ION EXCHANGE" ~ "high",
+                                        treatment_process== "ACTIVATED CARBON, GRANULAR" ~ "medium",
+                                        treatment_process== "ACTIVATED CARBON, POWDERED" ~ "medium",
+                                        )) %>% 
+  replace_na(list(categorical_removal = "low"))
+```
+
+## CollapsibleTree
+```{r}
+treatment.mod <- likely.treatment %>% 
+  filter(Total.Number.of.Service.Connections > 60000) %>% 
+  drop_na(unit_process)
+
+collapsible.tree <- collapsibleTree(treatment.mod, 
+                                    c("wool", "tension", "breaks"),
+                root = "Treatment Heirarchy", 
+                hierarchy = c("treatment_objective", 
+                              "unit_process",
+                              "treatment_process", 
+                              "categorical_removal"
+                              ),
+                 fontSize = 9,
+                zoomable = TRUE,
+                #tooltip = TRUE,
+                #fill = brewer.pal("RdBu"),
+                fillByLevel = FALSE) 
+
+#export for easy viewing elsewhere
+htmltools::save_html(collapsible.tree, file='output/collapsibleTree.html')
+htmlwidgets::saveWidget(collapsible.tree, file="output/collapsibleTree_widget.html")
+
+## visualize here
+collapsible.tree
+```
