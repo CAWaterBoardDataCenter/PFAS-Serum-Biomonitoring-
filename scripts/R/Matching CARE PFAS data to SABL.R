@@ -1,5 +1,5 @@
 # CARE Top 10% PFOS and PFOA by SABL Map
-# This code matches geocoded CARE 2, CARE 3, and CARE LA participant addresses to water system
+# This code spatially joins geocoded CARE 2, CARE 3, and CARE LA participant addresses to water system
 # boundaries from the SABL, and then maps participants and SABLs, showing which participants
 # have top 10% of PFOS and PFOA levels.
 
