@@ -1,7 +1,7 @@
 # CARE PFAS data linkage to SABL, Drinking water PFAS
 # This code spatially joins geocoded CARE 2, CARE 3, and CARE LA participant geocoded addresses to water system
 # boundaries from the SABL, downloads UCMR3 and Waterboard drinking water data, and links CARE participant data 
-# to drinking water PFAS data
+# to drinking water PFAS data.  Also includes overlapping boundary cleaning.
 
 
 # load libraries
@@ -18,11 +18,12 @@ library("sf")
 library("tmap")
 
 
+
 ###### CARE data ######
 
 ### link CARE geocoded data with PFAS lab results
 # read in CARE geocoded addresses excel files (these addresses were geocoded in ArcGIS)
-# Status "U" removed from CareLA, Care2, and Care3 because these were regeocoded and added in care_regeocoded
+# 22 unmatched addresses re-geocoded and added in care_regeocoded
 careLA_geo <- read_excel("J:/BiomCA/BC_GIS/CARE_GIS/CARE_PFAS_address/CARE_Geocoded_10.20.22_fromArcGIS.xlsx", sheet = "CARE_LA", range = cell_cols("X:AO"))
 careLA_geo <- careLA_geo[careLA_geo$Status != "U",c(1:4,11,18)]
 careLA_geo$study <- "careLA"
@@ -65,24 +66,53 @@ care_pfas <- care_pfas %>% rename("Patient_ID"="Kit Code")
 # (removed this) keep only geocoded matches and ties
 # care_pfas <- subset(care_pfas, Status %in% c('M', 'T'))
 
-# create new variables denoting top 10% of PFOS and PFOA
+# create new variables denoting top 10% and top 25% of PFOS and PFOA
 # quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.9)
 # quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.9)
+# quantile(care_pfas$PFHxS_num, na.rm=TRUE, probs = 0.9)
 
 care_pfas <- care_pfas %>% mutate(PFOS_Top10 =
-                    case_when(PFOS_num >= quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.9)
+                        case_when(PFOS_num >= quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.9)
                                & Status != "U" ~ ">= 6.38", 
                               PFOS_num < quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.9)
-                               & Status != "U" ~ "< 6.38"))
-care_pfas <- care_pfas %>% mutate(PFOA_Top10 =
-                    case_when(PFOA_num >= quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.9)
+                               & Status != "U" ~ "< 6.38"),
+                    PFOA_Top10 =
+                        case_when(PFOA_num >= quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.9)
                               & Status != "U" ~ ">= 2.36", 
                               PFOA_num < quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.9)
-                              & Status != "U" ~ "< 2.36"))
+                              & Status != "U" ~ "< 2.36"),
+                    PFHxS_Top10 =
+                      case_when(PFHxS_num >= quantile(care_pfas$PFHxS_num, na.rm=TRUE, probs = 0.9)
+                                & Status != "U" ~ ">= 2.22", 
+                                PFOA_num < quantile(care_pfas$PFHxS_num, na.rm=TRUE, probs = 0.9)
+                                & Status != "U" ~ "< 2.22"),
+                    PFOS_Top25 =
+                        case_when(PFOS_num >= quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.75)
+                              & Status != "U" ~ ">= 4.12", 
+                              PFOS_num < quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.75)
+                              & Status != "U" ~ "< 4.12"),
+                    PFOA_Top25 =
+                        case_when(PFOA_num >= quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.75)
+                              & Status != "U" ~ ">= 1.65", 
+                              PFOA_num < quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.75)
+                              & Status != "U" ~ "< 1.65"),
+                    PFOS_PFOA_Top =
+                        case_when((PFOS_Top10 == ">= 6.38" & PFOA_Top10 == ">= 2.36") ~ "Top 10% PFOS and PFOA",
+                              (PFOS_Top10 == ">= 6.38" | PFOA_Top10 == ">= 2.36") ~ "Top 10% PFOS or PFOA",
+                               (PFOS_Top10 == "< 6.38" & PFOA_Top10 == "< 2.36") ~ "< 90th percentile"),
+                    PFOS_PFOA_Top25 =
+                      case_when((PFOS_Top25 == ">= 4.12" & PFOA_Top25 == ">= 1.65") ~ "Top 25% PFOS and PFOA",
+                                (PFOS_Top25 == ">= 4.12" | PFOA_Top25 == ">= 1.65") ~ "Top 25% PFOS or PFOA",
+                                (PFOS_Top25 == "< 4.12" & PFOA_Top25 == "< 1.65") ~ "< 75th percentile"))
 
-# move top 10% variable
-care_pfas <- care_pfas %>% relocate(PFOS_Top10, .after="Analysis_Date")
-care_pfas <- care_pfas %>% relocate(PFOA_Top10, .after="Analysis_Date")
+# move top 10% variables
+care_pfas <- care_pfas %>% relocate(PFOS_Top10, .after="Analysis_Date") %>% 
+                      relocate(PFOA_Top10, .after="Analysis_Date") %>%
+                      relocate(PFHxS_Top10, .after="Analysis_Date") %>%
+                      relocate(PFOS_Top25, .after="Analysis_Date") %>%
+                      relocate(PFOA_Top25, .after="Analysis_Date") %>%
+                      relocate(PFOS_PFOA_Top, .after="Analysis_Date") %>%
+                      relocate(PFOS_PFOA_Top25, .after="Analysis_Date")
 
 # save data as excel file
 write_xlsx(care_pfas, "care_pfas.xlsx")
@@ -115,10 +145,10 @@ care_pfas_j <- care_pfas_j %>% mutate(overlap =
                                               overlap0 == "FALSE" ~ "0")) %>% 
                                 subset(select = -c(overlap0) )
 
-# save data as excel file
 write_xlsx(care_pfas_j, "care_pfas_sabl.xlsx")
 # for some reason csv variable names shift in csv
 # write.csv(care_pfas_j, "CARE_PFAS_SABL1.csv", row.names = FALSE)
+
 
 
 ###### UCMR3 DATA ######
@@ -136,7 +166,7 @@ unzip(temp1,
 ucmr3_allstates <- vroom("ucmr3/UCMR3_All_Tribes_AK_LA.txt")
 ucmr3_all <- subset(ucmr3_allstates, State == "CA")
 
-#make list of PFAS and filter
+# make list of PFAS and filter
 unique(ucmr3_all$Contaminant) %>% sort()
 
 pfaslist1 <- c("PFBS",
@@ -146,7 +176,7 @@ pfaslist1 <- c("PFBS",
                "PFOA",
                "PFOS")
 
-#filter for PFAS data and delete the rest
+# filter for PFAS data and delete the rest
 ucmr3 <- ucmr3_all %>% 
   filter(ucmr3_all$Contaminant %in% pfaslist1)
 
@@ -158,7 +188,7 @@ ucmr3$Contaminant <- case_when(ucmr3$Contaminant == "PFBS" ~ "u_PFBS",
                                 ucmr3$Contaminant == "PFOA" ~ "u_PFOA",
                                 ucmr3$Contaminant == "PFOS" ~ "u_PFOS")
 
-#assign zero for results below LOD (for now)
+# assign zero for results below LOD (for now)
 ucmr3$AnalyticalResultValue1 <- case_when(ucmr3$AnalyticalResultsSign == "<" ~ 0,
                                           ucmr3$AnalyticalResultsSign == "=" ~ ucmr3$AnalyticalResultValue)
 
@@ -174,7 +204,6 @@ ucmr3_avg <- ucmr3 %>% group_by(PWSID, Contaminant) %>%
               summarize(count = n(),
                         detect = sum(detect, na.rm=TRUE),
                         mean = mean(AnalyticalResultValue1, na.rm=TRUE))
-# print.data.frame(ucmr3_avg)
 
 # transpose contaminant variable to wide in order to list by PWSID
 ucmr3_avg1 <- ucmr3_avg %>%
@@ -208,10 +237,11 @@ care_ucmr3 <- care_ucmr3 %>% mutate(u_detect =
                                                    detect_u_PFOA == 0 &
                                                    detect_u_PFOS == 0) ~ '0'))
 
-# write excel file
-# for some reason column names shift when saving as csv
-#write.csv(care_ucmr3, "CARE_UCMR3_jointest.csv", row.names = FALSE)
-write_xlsx(care_ucmr3, "care_pfas_ucmr3.xlsx")
+# write excel file (column names shift when saving as csv)
+# write.csv(care_ucmr3, "CARE_UCMR3_jointest.csv", row.names = FALSE)
+# write_xlsx(care_ucmr3, "care_pfas_ucmr3.xlsx")
+# write_xlsx(ucmr3_avg1, "ucmr3_avg1.xlsx")
+
 
 
 ###### WATERBOARD SDWIS FILES ######
@@ -229,13 +259,13 @@ sdwis2 <- vroom("https://www.waterboards.ca.gov/drinking_water/certlic/drinkingw
 # 2019-present
 sdwis3 <- vroom("https://www.waterboards.ca.gov/drinking_water/certlic/drinkingwater/documents/edtlibrary/20190101-present.tab")
 
-#write.csv(temp2, "SDWIS/SDWIS3.csv", row.names = FALSE)
-#rm(temp2)
+# write.csv(temp2, "SDWIS/SDWIS3.csv", row.names = FALSE)
+# rm(temp2)
 
-#stack data frames, 
+# stack data frames, 
 sdwis <- rbind(sdwis1, sdwis2, sdwis3)
 
-#make list of PFAS and filter
+# make list of PFAS and filter
 unique(sdwis$"Analyte Name") %>% sort()
 
 pfaslist <- c("PERFLUOROBUTANESULFONIC ACID (PFBS)",
@@ -251,7 +281,7 @@ pfaslist <- c("PERFLUOROBUTANESULFONIC ACID (PFBS)",
               "PERFLUOROTRIDECANOIC ACID (PFTRDA)",
               "PERFLUOROUNDECANOIC ACID (PFUNA)")
 
-#filter for PFAS data and delete the rest
+# filter for PFAS data and delete the rest
 sdwis_pfas <- sdwis %>% 
   filter(sdwis$"Analyte Name" %in% pfaslist)
 
@@ -269,13 +299,11 @@ sdwis_pfas$Analyte <- case_when(sdwis_pfas$"Analyte Name" == "PERFLUOROBUTANESUL
                                 sdwis_pfas$"Analyte Name" == "PERFLUOROTRIDECANOIC ACID (PFTRDA)" ~ "s_PFTRDA",
                                 sdwis_pfas$"Analyte Name" == "PERFLUOROUNDECANOIC ACID (PFUNA)" ~ "s_PFUNA")
 
-#remove no longer needed
+# remove no longer needed
 rm(sdwis, sdwis1, sdwis2, sdwis3)
 
-## Write PFAS data to csv ##
-write.csv(sdwis_pfas, "sdwis_pfas_12.21.22.csv", row.names = FALSE)
-#write_xlsx(sdwis_pfas, "sdwis_pfas.xlsx")
-
+# write.csv(sdwis_pfas, "sdwis_pfas_12.21.22.csv", row.names = FALSE)
+# write_xlsx(sdwis_pfas, "sdwis_pfas.xlsx")
 
 # assign zero for results below LOD (for now)
 sdwis_pfas$Result1 <- case_when(sdwis_pfas$"Less Than Reporting Level" == "Y" ~ 0,
@@ -298,7 +326,6 @@ sdwis_avg <- sdwis_avg %>% rename("PWSID"='sdwis_pfas$"Water System Number"')
 sdwis_avg1 <- sdwis_avg %>%
   pivot_wider(names_from = Analyte, values_from = c(count, detect, mean))
 
-
 # sum the averages of each separate PFAS to get total PFAS
 sdwis_avg1$s_TotalPFAS <- rowSums(sdwis_avg1[, c("mean_s_PFBS",
                              "mean_s_PFOS",
@@ -316,7 +343,7 @@ sdwis_avg1$s_TotalPFAS <- rowSums(sdwis_avg1[, c("mean_s_PFBS",
 # join sdwis to CARE SABL data
 care_sdwis <- left_join(care_pfas_j, sdwis_avg1, by=c('SABL_PWSID'='PWSID'))
 
-# create indicator variable for whether or not the water system was tested for PFAS in ucmr3
+# create indicator variable for whether or not the water system was tested for PFAS in SDWIS
 care_sdwis <- care_sdwis %>% mutate(sdwis =
                                       case_when(is.na(SABL_PWSID) ~ as.character(NA),
                                                 is.na(s_TotalPFAS) ~ "0",
@@ -350,17 +377,17 @@ care_sdwis <- care_sdwis %>% mutate(s_detect =
                                                    !is.na(detect_s_PFTRDA) +
                                                    !is.na(detect_s_PFUNA) == 0) ~ '0'))
 
-## Write PFAS data to csv ##
-#write.csv(care_sdwis, "care_sdwis.csv", row.names = FALSE)
-write_xlsx(care_sdwis, "care_sdwis.xlsx")
+# write.csv(care_sdwis, "care_sdwis.csv", row.names = FALSE)
+# write_xlsx(care_sdwis, "care_sdwis.xlsx")
 
 
 
 ###### SDWIS and UCMR3 data together ######
 # to identify water systems with CARE px high PFAS but NO water testing
 
+# join UCMR3 and CARE data
 care_ucmr31 <- st_drop_geometry(care_ucmr3)
-care_ucmr31 <- care_ucmr31[,c(4,76,104:124)]
+care_ucmr31 <- care_ucmr31[,c(4,80,108:128)]
 
 care_sdwis_ucmr3 <- inner_join(care_sdwis, care_ucmr31, by=c('Patient_ID'='Patient_ID', 'SABL_PWSID' = 'SABL_PWSID'))
 rm(care_ucmr31)
@@ -369,13 +396,36 @@ rm(care_ucmr31)
 care_sdwis_ucmr3 <- care_sdwis_ucmr3 %>% mutate(anytesting =
                                       case_when((ucmr3 == "1" | sdwis == "1") ~ "1",
                                                 (ucmr3 == "0" & sdwis == "0") ~ "0",
-                                                (ucmr3 == NA & sdwis == NA) ~ as.character(NA)),
-                                      PFOS_PFOA_Top =
-                                        case_when((PFOS_Top10 == ">= 6.38" & PFOA_Top10 == ">= 2.36") ~ "Top 10% PFOS and PFOA",
-                                                  (PFOS_Top10 == ">= 6.38" | PFOA_Top10 == ">= 2.36") ~ "Top 10% PFOS or PFOA",
-                                                   (PFOS_Top10 == "< 6.38" & PFOA_Top10 == "< 2.36") ~ "< 90th percentile"))
-
+                                                (ucmr3 == NA & sdwis == NA) ~ as.character(NA)))
+                                      
 write_xlsx(care_sdwis_ucmr3, "care_sdwis_ucmr3.xlsx")
 
 
-write_xlsx(ucmr3_avg1, "ucmr3_avg1.xlsx")
+
+###### OVERLAPPING BOUNDARY CLEANING ######
+
+# This code removes the boundary overlaps as communicated to CDPH from Waterboard/Scott.  
+care_sdwis_ucmr3_clean <- care_sdwis_ucmr3 %>%
+    group_by(Patient_ID) %>% 
+    mutate(remove_overlap = case_when(overlap == "1" &
+                                      # first 4 = always default to smaller boundary
+                                      ((SABL_PWSID == "CA3310009") |
+                                      (SABL_PWSID == "CA3310049") |
+                                      (SABL_PWSID =="CA3610019") |
+                                      (SABL_PWSID =="CA1910067") |
+                                      # next from first round of boundary overlap prioritization. 
+                                      # Enter the water system(s) to remove first as "SABL_PWSID==XXXX",
+                                      # and then the water system that WILL be defaulted to as "any(SABL_PWISD==XXXX")
+                                      (SABL_PWSID == "CA1910045" & any(SABL_PWSID == "CA1910070")) |
+                                      (SABL_PWSID == "CA3690002" & any(SABL_PWSID == "CA3610039")) |
+                                      (SABL_PWSID == "CA1910032" & any(SABL_PWSID == "CA1910063")) |
+                                      (SABL_PWSID == "CA1910032" & any(SABL_PWSID == "CA1910140")) |
+                                      ((SABL_PWSID == "CA1910253" | SABL_PWSID == "CA1910086") & any(SABL_PWSID == "CA1910085")) |
+                                      (SABL_PWSID == "CA3690006" & any(SABL_PWSID == "CA3610012")) |
+                                      (SABL_PWSID == "CA1910253" & any(SABL_PWSID == "CA1910049")) |
+                                      (SABL_PWSID == "CA1910253" & any(SABL_PWSID == "CA1910152"))) ~ "Y",
+                              TRUE ~ "N"))
+
+write_xlsx(care_sdwis_ucmr3_clean, "care_sdwis_ucmr3_test.xlsx")
+
+
