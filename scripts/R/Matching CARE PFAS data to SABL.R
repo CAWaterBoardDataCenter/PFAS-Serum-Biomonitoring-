@@ -67,51 +67,58 @@ care_pfas <- care_pfas %>% rename("Patient_ID"="Kit Code")
 # care_pfas <- subset(care_pfas, Status %in% c('M', 'T'))
 
 # create new variables denoting top 10% and top 25% of PFOS and PFOA
-# quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.9)
-# quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.9)
-# quantile(care_pfas$PFHxS_num, na.rm=TRUE, probs = 0.9)
+# care_pfas1 <- subset(care_pfas, Status %in% c('M', 'T'))
+# quantile(care_pfas1$PFOS_num, na.rm=TRUE, probs = 0.9)
+# quantile(care_pfas1$PFOA_num, na.rm=TRUE, probs = 0.9)
+# quantile(care_pfas1$PFHxS_num, na.rm=TRUE, probs = 0.9)
 
-care_pfas <- care_pfas %>% mutate(PFOS_Top10 =
-                        case_when(PFOS_num >= quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.9)
-                               & Status != "U" ~ ">= 6.38", 
-                              PFOS_num < quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.9)
-                               & Status != "U" ~ "< 6.38"),
+
+care_pfas <- care_pfas %>% mutate(PFOS_Top5 =
+                        case_when(PFOS_num >= quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.95) ~ ">= 8.71", 
+                              PFOS_num < quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.95) ~ "< 8.71"),
+                    PFOA_Top5 =
+                        case_when(PFOA_num >= quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.95) ~ ">= 2.80", 
+                              PFOA_num < quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.95) ~ "< 2.80"),
+                    PFOS_Top10 =
+                      case_when(PFOS_num >= quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.9) ~ ">= 6.38", 
+                                PFOS_num < quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.9) ~ "< 6.38"),
                     PFOA_Top10 =
-                        case_when(PFOA_num >= quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.9)
-                              & Status != "U" ~ ">= 2.36", 
-                              PFOA_num < quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.9)
-                              & Status != "U" ~ "< 2.36"),
+                      case_when(PFOA_num >= quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.9) ~ ">= 2.36", 
+                                PFOA_num < quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.9) ~ "< 2.36"),
                     PFHxS_Top10 =
-                      case_when(PFHxS_num >= quantile(care_pfas$PFHxS_num, na.rm=TRUE, probs = 0.9)
-                                & Status != "U" ~ ">= 2.22", 
-                                PFOA_num < quantile(care_pfas$PFHxS_num, na.rm=TRUE, probs = 0.9)
-                                & Status != "U" ~ "< 2.22"),
+                      case_when(PFHxS_num >= quantile(care_pfas$PFHxS_num, na.rm=TRUE, probs = 0.9) ~ ">= 2.22", 
+                                PFHxS_num < quantile(care_pfas$PFHxS_num, na.rm=TRUE, probs = 0.9) ~ "< 2.22"),
                     PFOS_Top25 =
-                        case_when(PFOS_num >= quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.75)
-                              & Status != "U" ~ ">= 4.12", 
-                              PFOS_num < quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.75)
-                              & Status != "U" ~ "< 4.12"),
+                        case_when(PFOS_num >= quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.75) ~ ">= 4.12", 
+                              PFOS_num < quantile(care_pfas$PFOS_num, na.rm=TRUE, probs = 0.75) ~ "< 4.12"),
                     PFOA_Top25 =
-                        case_when(PFOA_num >= quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.75)
-                              & Status != "U" ~ ">= 1.65", 
-                              PFOA_num < quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.75)
-                              & Status != "U" ~ "< 1.65"),
+                        case_when(PFOA_num >= quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.75) ~ ">= 1.65", 
+                              PFOA_num < quantile(care_pfas$PFOA_num, na.rm=TRUE, probs = 0.75) ~ "< 1.65"),
                     PFOS_PFOA_Top =
                         case_when((PFOS_Top10 == ">= 6.38" & PFOA_Top10 == ">= 2.36") ~ "Top 10% PFOS and PFOA",
                               (PFOS_Top10 == ">= 6.38" | PFOA_Top10 == ">= 2.36") ~ "Top 10% PFOS or PFOA",
                                (PFOS_Top10 == "< 6.38" & PFOA_Top10 == "< 2.36") ~ "< 90th percentile"),
+                    PFOS_PFOA_Top5 =
+                      case_when((PFOS_Top5 == ">= 8.71" & PFOA_Top5 == ">= 2.80") |
+                                (PFOS_Top5 == ">= 8.71" | PFOA_Top5 == ">= 2.80") ~ "Top 5%",
+                                (PFOS_Top10 == ">= 6.38" & PFOA_Top10 == ">= 2.36") |
+                                (PFOS_Top10 == ">= 6.38" | PFOA_Top10 == ">= 2.36") ~ "Top 10%",
+                                TRUE ~ "<90th percentile"),
                     PFOS_PFOA_Top25 =
                       case_when((PFOS_Top25 == ">= 4.12" & PFOA_Top25 == ">= 1.65") ~ "Top 25% PFOS and PFOA",
                                 (PFOS_Top25 == ">= 4.12" | PFOA_Top25 == ">= 1.65") ~ "Top 25% PFOS or PFOA",
                                 (PFOS_Top25 == "< 4.12" & PFOA_Top25 == "< 1.65") ~ "< 75th percentile"))
 
 # move top 10% variables
-care_pfas <- care_pfas %>% relocate(PFOS_Top10, .after="Analysis_Date") %>% 
+care_pfas <- care_pfas %>% relocate(PFOS_Top5, .after="Analysis_Date") %>% 
+                      relocate(PFOA_Top5, .after="Analysis_Date") %>%
+                      relocate(PFOS_Top10, .after="Analysis_Date") %>% 
                       relocate(PFOA_Top10, .after="Analysis_Date") %>%
                       relocate(PFHxS_Top10, .after="Analysis_Date") %>%
                       relocate(PFOS_Top25, .after="Analysis_Date") %>%
                       relocate(PFOA_Top25, .after="Analysis_Date") %>%
                       relocate(PFOS_PFOA_Top, .after="Analysis_Date") %>%
+                      relocate(PFOS_PFOA_Top5, .after="Analysis_Date") %>%
                       relocate(PFOS_PFOA_Top25, .after="Analysis_Date")
 
 # save data as excel file
@@ -130,10 +137,10 @@ care_pfas_sf <- st_as_sf(care_pfas, coords= c(x="X",y="Y"), crs=4326)
 
 # if need be convert the coordinate system / projection so it is consistent for the spatial join
 SABL_crs <- st_crs(SABL_sf)
-care_pfas_sf1 <- st_transform(care_pfas_sf, crs = SABL_crs)
+care_pfas_sf <- st_transform(care_pfas_sf, crs = SABL_crs)
 
 # spatially join CARE data with SABL
-care_pfas_j <- st_join(care_pfas_sf1, SABL_sf, join = st_within)
+care_pfas_j <- st_join(care_pfas_sf, SABL_sf, join = st_within)
 
 # create new variable 'overlap' that shows when participants matched to multiple water systems
 # (fromLast = TRUE indicates that "duplication should be considered from the reverse side". 
@@ -279,7 +286,13 @@ pfaslist <- c("PERFLUOROBUTANESULFONIC ACID (PFBS)",
               "PERFLUORONONANOIC ACID (PFNA)",
               "PERFLUOROTETRADECANOIC ACID (PFTA)",
               "PERFLUOROTRIDECANOIC ACID (PFTRDA)",
-              "PERFLUOROUNDECANOIC ACID (PFUNA)")
+              "PERFLUOROUNDECANOIC ACID (PFUNA)",
+              "HFPO-DA",
+              "ADONA",
+              "NETFOSAA",
+              "9CL-PF3ONS",
+              "NMEFOSAA",
+              "11CL-PF3OUDS")
 
 # filter for PFAS data and delete the rest
 sdwis_pfas <- sdwis %>% 
@@ -297,7 +310,13 @@ sdwis_pfas$Analyte <- case_when(sdwis_pfas$"Analyte Name" == "PERFLUOROBUTANESUL
                                 sdwis_pfas$"Analyte Name" == "PERFLUORONONANOIC ACID (PFNA)" ~ "s_PFNA",
                                 sdwis_pfas$"Analyte Name" == "PERFLUOROTETRADECANOIC ACID (PFTA)" ~ "s_PFTA",
                                 sdwis_pfas$"Analyte Name" == "PERFLUOROTRIDECANOIC ACID (PFTRDA)" ~ "s_PFTRDA",
-                                sdwis_pfas$"Analyte Name" == "PERFLUOROUNDECANOIC ACID (PFUNA)" ~ "s_PFUNA")
+                                sdwis_pfas$"Analyte Name" == "PERFLUOROUNDECANOIC ACID (PFUNA)" ~ "s_PFUNA",
+                                sdwis_pfas$"Analyte Name" == "HFPO-DA" ~ "s_HFPO_DA",
+                                sdwis_pfas$"Analyte Name" == "ADONA" ~ "s_ADONA",
+                                sdwis_pfas$"Analyte Name" == "NETFOSAA" ~ "s_NETFOSAA",
+                                sdwis_pfas$"Analyte Name" == "9CL-PF3ONS" ~ "s_9CL_PF3ONS",
+                                sdwis_pfas$"Analyte Name" == "NMEFOSAA" ~ "s_NMEFOSAA",
+                                sdwis_pfas$"Analyte Name" == "11CL-PF3OUDS" ~ "s_11CL_PF3OUDS")
 
 # remove no longer needed
 rm(sdwis, sdwis1, sdwis2, sdwis3)
@@ -338,7 +357,13 @@ sdwis_avg1$s_TotalPFAS <- rowSums(sdwis_avg1[, c("mean_s_PFBS",
                              "mean_s_PFNA",
                              "mean_s_PFTA",
                              "mean_s_PFTRDA",
-                             "mean_s_PFUNA")], na.rm=TRUE)
+                             "mean_s_PFUNA",
+                             "mean_s_HFPO_DA",
+                             "mean_s_ADONA",
+                             "mean_s_NETFOSAA",
+                             "mean_s_9CL_PF3ONS",
+                             "mean_s_NMEFOSAA",
+                             "mean_s_11CL_PF3OUDS")], na.rm=TRUE)
 
 # join sdwis to CARE SABL data
 care_sdwis <- left_join(care_pfas_j, sdwis_avg1, by=c('SABL_PWSID'='PWSID'))
@@ -363,7 +388,13 @@ care_sdwis <- care_sdwis %>% mutate(s_detect =
                                                   detect_s_PFNA > 0 |
                                                   detect_s_PFTA > 0 |
                                                   detect_s_PFTRDA > 0 |
-                                                  detect_s_PFUNA > 0) ~ '1',
+                                                  detect_s_PFUNA > 0 |
+                                                  detect_s_HFPO_DA > 0 |
+                                                  detect_s_ADONA > 0 |
+                                                  detect_s_NETFOSAA > 0 |
+                                                  detect_s_9CL_PF3ONS > 0 |
+                                                  detect_s_NMEFOSAA > 0 |
+                                                  detect_s_11CL_PF3OUDS > 0) ~ '1',
                                                 (!is.na(detect_s_PFBS) +
                                                    !is.na(detect_s_PFOS) + 
                                                    !is.na(detect_s_PFOA) + 
@@ -375,7 +406,13 @@ care_sdwis <- care_sdwis %>% mutate(s_detect =
                                                    !is.na(detect_s_PFNA) +
                                                    !is.na(detect_s_PFTA) +
                                                    !is.na(detect_s_PFTRDA) +
-                                                   !is.na(detect_s_PFUNA) == 0) ~ '0'))
+                                                   !is.na(detect_s_PFUNA) +
+                                                   !is.na(detect_s_HFPO_DA) +
+                                                   !is.na(detect_s_ADONA) +
+                                                   !is.na(detect_s_NETFOSAA) +
+                                                   !is.na(detect_s_9CL_PF3ONS) +
+                                                   !is.na(detect_s_NMEFOSAA) +
+                                                   !is.na(detect_s_11CL_PF3OUDS)== 0) ~ '0'))
 
 # write.csv(care_sdwis, "care_sdwis.csv", row.names = FALSE)
 # write_xlsx(care_sdwis, "care_sdwis.xlsx")
@@ -387,7 +424,10 @@ care_sdwis <- care_sdwis %>% mutate(s_detect =
 
 # join UCMR3 and CARE data
 care_ucmr31 <- st_drop_geometry(care_ucmr3)
-care_ucmr31 <- care_ucmr31[,c(4,80,108:128)]
+care_ucmr31 <- care_ucmr31[,c("Patient_ID", "SABL_PWSID", "count_u_PFBS", "count_u_PFHpA", "count_u_PFHxS",	"count_u_PFNA",	
+                              "count_u_PFOA",	"count_u_PFOS",	"detect_u_PFBS", "detect_u_PFHpA", "detect_u_PFHxS", "detect_u_PFNA",
+                              "detect_u_PFOA", "detect_u_PFOS",	"mean_u_PFBS", "mean_u_PFHpA", "mean_u_PFHxS", "mean_u_PFNA",
+                              "mean_u_PFOA", "mean_u_PFOS", "u_TotalPFAS", "ucmr3",	"u_detect")]
 
 care_sdwis_ucmr3 <- inner_join(care_sdwis, care_ucmr31, by=c('Patient_ID'='Patient_ID', 'SABL_PWSID' = 'SABL_PWSID'))
 rm(care_ucmr31)
@@ -397,15 +437,23 @@ care_sdwis_ucmr3 <- care_sdwis_ucmr3 %>% mutate(anytesting =
                                       case_when((ucmr3 == "1" | sdwis == "1") ~ "1",
                                                 (ucmr3 == "0" & sdwis == "0") ~ "0",
                                                 (ucmr3 == NA & sdwis == NA) ~ as.character(NA)))
+
+# indicator variable for ANY PFAS detect, UCMR3 OR SDWIS
+care_sdwis_ucmr3 <- care_sdwis_ucmr3 %>% mutate(anydetect =
+                                                  case_when((u_detect == "1" | s_detect == "1") ~ "1",
+                                                            ((u_detect == "0" & is.na(s_detect)) | 
+                                                               (is.na(u_detect) & s_detect == "0") |
+                                                               (u_detect == "0" & s_detect == "0")) ~ "0",
+                                                            (u_detect == NA & s_detect == NA) ~ as.character(NA)))
                                       
-write_xlsx(care_sdwis_ucmr3, "care_sdwis_ucmr3.xlsx")
+# write_xlsx(care_sdwis_ucmr3, "care_sdwis_ucmr3.xlsx")
 
 
 
 ###### OVERLAPPING BOUNDARY CLEANING ######
 
-# This code removes the boundary overlaps as communicated to CDPH from Waterboard/Scott.  
-care_sdwis_ucmr3_clean <- care_sdwis_ucmr3 %>%
+# This code creates a Y/N variable to remove the boundary overlaps as communicated to CDPH from Waterboard/Scott.  
+care_sdwis_ucmr3 <- care_sdwis_ucmr3 %>%
     group_by(Patient_ID) %>% 
     mutate(remove_overlap = case_when(overlap == "1" &
                                       # first 4 = always default to smaller boundary
@@ -424,8 +472,22 @@ care_sdwis_ucmr3_clean <- care_sdwis_ucmr3 %>%
                                       (SABL_PWSID == "CA3690006" & any(SABL_PWSID == "CA3610012")) |
                                       (SABL_PWSID == "CA1910253" & any(SABL_PWSID == "CA1910049")) |
                                       (SABL_PWSID == "CA1910253" & any(SABL_PWSID == "CA1910152"))) ~ "Y",
-                              TRUE ~ "N"))
+                                      TRUE ~ "N"))
 
-write_xlsx(care_sdwis_ucmr3_clean, "care_sdwis_ucmr3_test.xlsx")
+# remove overlapping systems identified
+care_sdwis_ucmr3_clean <- care_sdwis_ucmr3[which(care_sdwis_ucmr3$remove_overlap=="N"), ]
+
+# create updated overlap variable
+# (fromLast = TRUE indicates that "duplication should be considered from the reverse side". 
+# The two logical vectors are combined using | since a TRUE in at least one of them indicates a duplicated value.)
+care_sdwis_ucmr3_clean$overlap0 <- duplicated(care_sdwis_ucmr3_clean$Sample_ID) | duplicated(care_sdwis_ucmr3_clean$Sample_ID, fromLast = TRUE)
+care_sdwis_ucmr3_clean <- care_sdwis_ucmr3_clean %>% mutate(overlap1 =
+                                        case_when(is.na(SABL_PWSID) ~ as.character(NA),
+                                                  overlap0 == "TRUE" ~ "1", 
+                                                  overlap0 == "FALSE" ~ "0")) %>% 
+  subset(select = -c(overlap0) )
+
+write_xlsx(care_sdwis_ucmr3_clean, "care_sdwis_ucmr3_clean.xlsx")
+
 
 
